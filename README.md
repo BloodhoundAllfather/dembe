@@ -18,12 +18,13 @@ example: ./dembe -l 8080 -c 10.10.10.40 5000
 ```
 
 ## Compile
-It will compile on Linux/UNIX/MacOS:
+It will compile on UNIX OS family with:
+
 `gcc -lpthread dembe.c -o dembe`
 
 On Windows, most probably it will be compiled using [cygwin](https://www.cygwin.com/). I don't have Windows to test it; your feedback will be apprecited.
 
 ## License
-This project is licensed under the MIT License - see the [LICENSE.md](https://github.com/BloodhoundAllfather/dembe/blob/master/LICENSE) file for details
+This project is licensed under the MIT License - see the [LICENSE](https://github.com/BloodhoundAllfather/dembe/blob/master/LICENSE) file for details
 
 
