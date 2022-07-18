@@ -9,7 +9,7 @@
           "type": "cppdbg",
           "request": "launch",
           "program": "${fileDirname}/${fileBasenameNoExtension}",
-          "args": ["127.0.0.1", "2000", "127.0.0.1", "3000"],
+          "args": ["-c", "127.0.0.1", "2000", "-c", "127.0.0.1", "3000"],
           "stopAtEntry": false,
           "cwd": "${workspaceFolder}",
           "environment": [],
