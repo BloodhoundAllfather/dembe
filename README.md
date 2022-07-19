@@ -1,10 +1,12 @@
 # Dembe
-## TCP data transporter: single-file, lightweight and fast
+## TCP data tunnel: single-file, multi-threaded and fast
 
 Dembe is a TCP tunnel application written in C. It makes two TCP connections (either via listening or connecting) and sends out the data received from one end to another with its muti-threaded design. It will automatically connect/listen if connection gets terminated.
 
 In this example you can browse the server's HTTP port 3000 from your localhost using `dembe`:
 ![Diagram](images/diagram.png)
+
+
 
 **Using with Firefox**
 
