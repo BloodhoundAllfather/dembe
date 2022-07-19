@@ -1,7 +1,7 @@
 # Dembe
 ## TCP data transporter: single-file, lightweight and fast
 
-Dembe is TCP transporter written in C. It makes two TCP connections (either via listening or connecting) and sends out the data received from the other end and vice versa with its muti-threaded design.
+Dembe is a TCP tunnel application written in C. It makes two TCP connections (either via listening or connecting) and sends out the data received from the other end and vice versa with its muti-threaded design.
 The reason it's single file is that you can easily transfer the file to any machine, build it and use it there. On 64-bit Ubuntu that I tested, compiled executable was 21 KB. 
 
 ## Usage
@@ -18,9 +18,15 @@ example: ./dembe -l 8080 -c 10.10.10.40 5000
 ```
 
 ## Compile
-It will compile on UNIX OS family with:
+It will compile on most UNIX OS family with:
 
 `gcc -lpthread dembe.c -o dembe`
+
+Some systems have `libpthread.a` installed though. If the command above didn't work, you can compile this way:
+
+`gcc -pthread dembe.c -o dembe`
+
+Also if you want to compile static, you can add `-static` to the `gcc` command. The executable filesize will grow but you wouldn't have worry about dependencies. I was able to run static executable on a docker instance.
 
 On Windows, most probably it will be compiled using [cygwin](https://www.cygwin.com/). I don't have Windows to test it; your feedback will be apprecited.
 

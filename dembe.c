@@ -1,7 +1,7 @@
 // ******************************************
 //       Coded by BloodhoundAllfather
 // ------------------------------------------
-//       dembe: TCP data transporter
+//       dembe: TCP data tunnel
 // ******************************************
 #include <arpa/inet.h>
 #include <stdio.h>
@@ -16,23 +16,28 @@
 #include <errno.h>
 #include <signal.h>
 //--------------------------------------------------------------------------------------------------------------------------------
-#define IP_MAX_LEN 20
+#define IP_MAX_LEN 			20
 #define LOOP_SLEEP_DURATION 5000 // 5 milliseconds
-#define LISTEN_MODE 0
-#define CONNECT_MODE 1
+#define MAX_QUEUE_NUM		10 // maximum number of connections to be in listen queue
+#define LISTEN_MODE 		0
+#define CONNECT_MODE 		1
+#define CONN_DISCONNECTED 	0
+#define CONN_IN_PROGRESS 	1
+#define CONN_CONNECTED 		2
+#define CONN_UNINITIALIZED	3
 
-void* socketThread(void *);
-int8_t validateNumber(char*);
-int8_t validateIP(char*);
-void signalHandler(int);
-void printUsage();
+void* 	socketThread(void *);
+int8_t 	validateNumber(char*);
+int8_t 	validateIP(char*);
+void 	signalHandler(int);
+void 	printUsage();
 
 struct Connection
 {
 	char ip[IP_MAX_LEN];
 	uint16_t port;
 	int socket;
-	int8_t ready;
+	int8_t connectionStatus;
 };
 
 pthread_t thread1, thread2;
@@ -130,8 +135,8 @@ int main(int argc, char const* argv[])
 		return -1;
 	}
 	
-	connections[thread1Id].ready = 0;
-	connections[thread2Id].ready = 0;
+	connections[thread1Id].connectionStatus = CONN_UNINITIALIZED;
+	connections[thread2Id].connectionStatus = CONN_UNINITIALIZED;
 	
 	// create threads and wait for them
 	if( (thread1Status = pthread_create( &thread1, NULL, socketThread, (void*) &thread1Id)) != 0 ||
@@ -154,20 +159,14 @@ int main(int argc, char const* argv[])
 void* socketThread(void *param)
 {
 	int8_t threadId = (*(int8_t*)param) + 1;
-    struct sockaddr_in serv_addr, sendAddr;
+    struct sockaddr_in serv_addr, sendAddr, peerAddr;
 	int theSocket = 0, readBytesCount, peerSocket = 0, receiveSocket = 0, flags, errorNo;
+	socklen_t peerAddrLen;
+	int connectRetVal;
 	char buffer[ 2048 ];
 	int8_t thisThread  = threadId - 1;
 	int8_t otherThread = thisThread == 0 ? 1: 0;
 	int8_t listenMode = connections[thisThread].ip[0] == 0 ? LISTEN_MODE : CONNECT_MODE;
-
-	// initialize socket
-	if ( (theSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0 )
-	{
-		printf("Socket creation error\nExiting thread %d\n", threadId);
-		continueRunning = 0;
-		return NULL;
-	}
 
 	// initialize sockaddr_in instances
 	memset(&serv_addr, '0', sizeof(serv_addr));
@@ -180,9 +179,17 @@ void* socketThread(void *param)
 	sendAddr.sin_port = htons( connections[otherThread].port );
 	sendAddr.sin_addr.s_addr = inet_addr( connections[otherThread].ip );
 
-	// if -l parameter is passed
+	// setup listener socket if -l parameter is passed: listen and bind to the given port
 	if(listenMode == LISTEN_MODE)
 	{
+		// initialize socket
+		if ( (theSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0 )
+		{
+			printf("Socket creation error\nExiting thread %d\n", threadId);
+			continueRunning = 0;
+			return NULL;
+		}
+
 		// set SO_REUSEADDR flag to the listening socket
 		flags = 1;
 		if(setsockopt(theSocket, SOL_SOCKET, SO_REUSEADDR, &flags, sizeof(flags)) == -1)
@@ -201,7 +208,7 @@ void* socketThread(void *param)
 			return NULL;
 		}
 		
-		if( listen(theSocket, 1) == -1)
+		if( listen(theSocket, MAX_QUEUE_NUM) == -1)
 		{
 			printf("Listen error at port %d\nExiting thread %d\n", connections[thisThread].port, threadId);
 			continueRunning = 0;
@@ -217,78 +224,102 @@ void* socketThread(void *param)
 			close(theSocket);
 			return NULL;
 		}
-
-		// waiting for a peer to connect
-		while( continueRunning && !connections[thisThread].ready )
-		{
-			if( (peerSocket = accept(theSocket, (struct sockaddr*)NULL, NULL)) == -1 )
-			{
-				errorNo = errno;
-				if(errorNo != EWOULDBLOCK)
-				{
-					printf("Connection terminated after accept - thread %d\nExiting...\n", threadId);
-					continueRunning = 0;
-				}
-				else
-					usleep(LOOP_SLEEP_DURATION);
-			}
-			else
-			{
-				// now the returning socket from successful accept function has to be non-blocking too
-				if( (flags = fcntl(peerSocket, F_GETFL) == -1) || fcntl(peerSocket, F_SETFL, flags | O_NONBLOCK) == -1)
-				{
-					printf("Peer socket non-block initialize error\nExiting thread %d\n", threadId);
-					continueRunning = 0;
-					close(theSocket);
-					close(peerSocket);
-					return NULL;
-				}
-				
-				connections[thisThread].ready = 1;
-				printf("Accepted connection at thread %d\n", threadId);
-			}
-		}
-	}
-	else
-	{
-		// if -c paramter is passed, connect to the given IP:Port
-		if( connect(theSocket, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0 )
-		{
-			errorNo = errno;
-			printf("Connection failed at thread %d errorNo: %d\nExiting...\n", threadId, errorNo);
-			continueRunning = 0;
-		}
-
-		// make it non-blocking
-		if( (flags = fcntl(theSocket, F_GETFL) == -1) || fcntl(theSocket, F_SETFL, flags | O_NONBLOCK) == -1)
-		{
-			printf("Socket non-block initialize error\nExiting thread %d\n", threadId);
-			continueRunning = 0;
-			return NULL;
-		}
-
-		connections[thisThread].ready = 1;
-		printf("Connect established to %s:%d - thread %d\n", connections[thisThread].ip, connections[thisThread].port, threadId);
 	}
 
-	// each thread puts its own socket instance in connections[thisThread] array
-	receiveSocket = listenMode == LISTEN_MODE ? peerSocket : theSocket;
-	connections[thisThread].socket = receiveSocket;
-
-	if(connections[otherThread].ready == 0)
-		printf("Thread %d is ready. Waiting for the other thread...\n", threadId);
-	
-	// wait until the other thread is ready to transfer data
-	while( continueRunning && !connections[otherThread].ready )
-		usleep(LOOP_SLEEP_DURATION);
-	
-	// at this point, both threads are ready. So only the first thread should print this info
-	if(thisThread == 0)
-		printf("Everything is ready. Transferring data started.\n");
-
+	// ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 	// the main receive-send loop that transfers the data
 	while( continueRunning )
 	{
+		if(connections[thisThread].connectionStatus == CONN_UNINITIALIZED)
+		{
+			if(listenMode == CONNECT_MODE)
+			{
+				// initialize socket
+				if ( (theSocket = socket(AF_INET, SOCK_STREAM, 0)) < 0 )
+				{
+					printf("Socket creation error\nExiting thread %d\n", threadId);
+					continueRunning = 0;
+					return NULL;
+				}
+
+				// make it non-blocking
+				if( (flags = fcntl(theSocket, F_GETFL) == -1) || fcntl(theSocket, F_SETFL, flags | O_NONBLOCK) == -1)
+				{
+					printf("Socket non-block initialize error\nExiting thread %d\n", threadId);
+					continueRunning = 0;
+					return NULL;
+				}
+			}			
+			connections[thisThread].connectionStatus = CONN_DISCONNECTED;
+		}
+		
+		// while loop for making connection or accepting a connection
+		while(connections[thisThread].connectionStatus != CONN_CONNECTED && continueRunning)
+		{
+			if(listenMode == LISTEN_MODE)
+			{
+				// waiting for a peer to connect
+				if( (peerSocket = accept(theSocket, (struct sockaddr*)NULL, NULL)) == -1 )
+				{
+					errorNo = errno;
+					if(errorNo != EWOULDBLOCK)
+					{
+						printf("Connection terminated after accept - thread %d\nExiting...\n", threadId);
+						connections[thisThread].connectionStatus = CONN_DISCONNECTED;
+					}
+					else
+						usleep(LOOP_SLEEP_DURATION);
+				}
+				else
+				{
+					peerAddrLen = sizeof(struct sockaddr);
+					if( getpeername(peerSocket, (struct sockaddr*)&peerAddr, &peerAddrLen) == 0 )
+						printf("Accepted connection from %s:%d at thread %d\n", inet_ntoa(peerAddr.sin_addr), ntohs(peerAddr.sin_port), threadId);
+					
+					// now the peer socket has to be non-blocking too
+					if( (flags = fcntl(peerSocket, F_GETFL) == -1) || fcntl(peerSocket, F_SETFL, flags | O_NONBLOCK) == -1)
+					{
+						printf("Peer socket non-block initialize error\nExiting thread %d\n", threadId);
+						continueRunning = 0;
+						close(theSocket);
+						close(peerSocket);
+						return NULL;
+					}
+
+					receiveSocket = peerSocket;
+					connections[thisThread].socket = peerSocket;
+					connections[thisThread].connectionStatus = CONN_CONNECTED;					
+				}
+			}
+			else // listenMode == CONNECT_MODE
+			{
+				// if -c paramter is passed, connect to the given IP:Port
+				if( connect(theSocket, (struct sockaddr*)&serv_addr, sizeof(serv_addr)) < 0 )
+				{
+					errorNo = errno;
+					// a connect is already in progress
+					if(errorNo == EALREADY || errorNo == EINPROGRESS)
+					{
+						connections[thisThread].connectionStatus = CONN_IN_PROGRESS;
+						usleep(LOOP_SLEEP_DURATION);
+					}
+					// already connected
+					else if(errorNo == EISCONN)
+					{
+						receiveSocket = theSocket;
+						connections[thisThread].socket = theSocket;
+						connections[thisThread].connectionStatus = CONN_CONNECTED;
+						printf("Connection established at thread %d\n", threadId);
+					}
+					else
+					{
+						printf("Connection failed at thread %d errorNo: %d\nExiting...\n", threadId, errorNo);
+						usleep(LOOP_SLEEP_DURATION);
+					}
+				}
+			}
+		}
+		
 		// each socket should be accessed with mutex because when the thread reads data from 'receiveSocket',
 		// the other thread's socket should send the data out
 		pthread_mutex_lock(&threadMutexes[thisThread]);
@@ -301,7 +332,10 @@ void* socketThread(void *param)
 			if(errorNo != EWOULDBLOCK)
 			{
 				printf("Connection terminated unexpectedly at thread %d - errno %d\nExiting...\n", threadId, errorNo);
-				continueRunning = 0;
+				pthread_mutex_lock(&threadMutexes[thisThread]);
+				connections[thisThread].connectionStatus = CONN_UNINITIALIZED;
+				close(receiveSocket);
+				pthread_mutex_unlock(&threadMutexes[thisThread]);
 			}
 			else
 				// since I made the socket non-blocking, it returns -1 but with EWOULDBLOCK errno
@@ -311,19 +345,20 @@ void* socketThread(void *param)
 		else if(readBytesCount == 0)
 		{
 			printf("Connection closed at thread %d\nExiting...\n", threadId);
-			continueRunning = 0;
+			pthread_mutex_lock(&threadMutexes[thisThread]);
+			connections[thisThread].connectionStatus = CONN_UNINITIALIZED;
+			close(receiveSocket);
+			pthread_mutex_unlock(&threadMutexes[thisThread]);
 		}
 		else if(readBytesCount > 0)
 		{
 			// access the other thread's socket to send out read data
-			pthread_mutex_lock(&threadMutexes[otherThread]);
-			if( sendto(connections[otherThread].socket, buffer, readBytesCount, 0, (struct sockaddr*)&sendAddr, sizeof(sendAddr)) == -1)
+			if( connections[otherThread].connectionStatus == CONN_CONNECTED )
 			{
-				errorNo = errno;
-				printf("Failed to send message from thread %d with %d error no\nExiting...\n", threadId, errorNo);
-				continueRunning = 0;
+				pthread_mutex_lock(&threadMutexes[otherThread]);
+				sendto(connections[otherThread].socket, buffer, readBytesCount, 0, (struct sockaddr*)&sendAddr, sizeof(sendAddr));
+				pthread_mutex_unlock(&threadMutexes[otherThread]);
 			}
-			pthread_mutex_unlock(&threadMutexes[otherThread]);
 		}
 	}
 
