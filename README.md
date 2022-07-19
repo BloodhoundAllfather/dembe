@@ -7,6 +7,7 @@ In this example you can browse the server's HTTP port 3000 from your localhost u
 ![Diagram](images/diagram.png)
 
 **Using with Firefox**
+
 If you want to browse a web-page throught a tunnel created by `dembe`, then you should change two settings at your Firefox. By default Firefox tries to fetch everything from 6 threads. You should make Firefox to send/receive everything from a single socket. To do that, go to `about:config` in your Firefox and change these:
 
 `network.prefetch-next` -> **false**
