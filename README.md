@@ -1,12 +1,17 @@
 # Dembe
 ## TCP data transporter: single-file, lightweight and fast
 
-Dembe is a TCP tunnel application written in C. It makes two TCP connections (either via listening or connecting) and sends out the data received from the other end and vice versa with its muti-threaded design. It will automatically will connect/listen if its alive connection gets terminated.
+Dembe is a TCP tunnel application written in C. It makes two TCP connections (either via listening or connecting) and sends out the data received from one end to another with its muti-threaded design. It will automatically connect/listen if connection gets terminated.
 
 In this example you can browse the server's HTTP port 3000 from your localhost using `dembe`:
 ![Diagram](images/diagram.png)
 
-The reason it's single file is that you can easily transfer the file to any machine, build it there and use it. On 64-bit Ubuntu that I tested, compiled executable was 21 KB. 
+**Using with Firefox**
+If you want to browse a web-page throught a tunnel created by `dembe`, then you should change two settings at your Firefox. By default Firefox tries to fetch everything from 6 threads. You should make Firefox to send/receive everything from a single socket. To do that, go to `about:config` in your Firefox and change these:
+
+`network.prefetch-next` -> **false**
+
+`network.http.speculative-parallel-limit` -> **0**
 
 ## Usage
 
