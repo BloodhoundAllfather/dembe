@@ -264,7 +264,7 @@ void* socketThread(void *param)
 					errorNo = errno;
 					if(errorNo != EWOULDBLOCK)
 					{
-						printf("Connection terminated after accept - thread %d\nExiting...\n", threadId);
+						printf("Connection terminated after accept - thread %d\n", threadId);
 						connections[thisThread].connectionStatus = CONN_DISCONNECTED;
 					}
 					else
@@ -309,12 +309,13 @@ void* socketThread(void *param)
 						receiveSocket = theSocket;
 						connections[thisThread].socket = theSocket;
 						connections[thisThread].connectionStatus = CONN_CONNECTED;
-						printf("Connection established at thread %d\n", threadId);
+						printf("Connection established to %s:%d at thread %d\n", connections[thisThread].ip, 
+								connections[thisThread].port, threadId);
 					}
 					else
 					{
-						printf("Connection failed at thread %d errorNo: %d\nExiting...\n", threadId, errorNo);
-						usleep(LOOP_SLEEP_DURATION);
+						//printf("Connection failed at thread %d errorNo: %d\n", threadId, errorNo);
+						sleep(1); // failed to connect. wait for 1 second
 					}
 				}
 			}
@@ -331,7 +332,7 @@ void* socketThread(void *param)
 		{
 			if(errorNo != EWOULDBLOCK)
 			{
-				printf("Connection terminated unexpectedly at thread %d - errno %d\nExiting...\n", threadId, errorNo);
+				printf("Connection terminated unexpectedly at thread %d - errno %d\n", threadId, errorNo);
 				pthread_mutex_lock(&threadMutexes[thisThread]);
 				connections[thisThread].connectionStatus = CONN_UNINITIALIZED;
 				close(receiveSocket);
@@ -344,7 +345,7 @@ void* socketThread(void *param)
 		}
 		else if(readBytesCount == 0)
 		{
-			printf("Connection closed at thread %d\nExiting...\n", threadId);
+			printf("Connection closed at thread %d\n", threadId);
 			pthread_mutex_lock(&threadMutexes[thisThread]);
 			connections[thisThread].connectionStatus = CONN_UNINITIALIZED;
 			close(receiveSocket);
@@ -419,7 +420,7 @@ int8_t validateIP(char *ip)
 // handler of signal for SIGINT (user interruption)
 void signalHandler(int sig)
 {
-	printf("Closing...\n");
+	printf("Interrupt detected. Closing...\n");
 	continueRunning = 0;
 }
 //--------------------------------------------------------------------------------------------------------------------------------
